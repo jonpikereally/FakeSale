@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "url": "FakeSale.zip",
-  "notes": "First release: logs every product page you visit, shows price history, and flags fake sales."
+  "notes": "New: optionally log every item on search, category and collection pages (Settings > What to log). Fixed: category pages could be logged as if you'd viewed their first item."
 }
