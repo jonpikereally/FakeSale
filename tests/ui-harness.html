@@ -1,0 +1,45 @@
+<!doctype html>
+<!-- Opens the real app page with a fake chrome.* API and sample data.
+     Serve the repo root (python3 -m http.server 8790) and open /tests/ui-harness.html -->
+<html><head><meta charset="utf-8"><title>FakeSale UI harness</title>
+<style>html,body{margin:0;background:#888}iframe{border:0;background:#fff;margin:16px;box-shadow:0 2px 12px #0004}</style></head>
+<body>
+<iframe id="f" width="440" height="600"></iframe>
+<script>
+const D = 864e5, now = Date.now();
+const mk = (id, name, host, seq, img) => ({ id, name, host, url: `https://${host}/p/${id}`, image: img || null, currency: "USD",
+  firstSeen: now + seq[0][0] * D, lastSeen: now + seq.at(-1)[0] * D,
+  visits: seq.map(([d, price, original]) => ({ t: now + d * D, price, original: original || null, currency: "USD", source: "test" })) });
+const store = {
+  "item:a": mk("a", "Ergonomic Office Chair with Lumbar Support, Mesh Back", "furniture.test", [[-40, 249.99, 499.99], [-25, 249.99, 499.99], [-10, 239.99, 499.99], [-1, 249.99, 499.99]]),
+  "item:b": mk("b", "Noise Cancelling Headphones", "audio.test", [[-30, 349], [-12, 349], [-0.2, 279, 349]]),
+  "item:c": mk("c", "Cast Iron Skillet 12 inch", "kitchen.test", [[-2, 39.95, 59.95]]),
+  "item:d": mk("d", "Running Shoes", "shoes.test", [[-20, 120], [-8, 120], [-0.1, 135, 160]]),
+  "item:e": mk("e", "USB-C Cable 2m", "cables.test", [[-0.5, 12.99]]),
+  errors: [{ code: "FS-202", details: "Example error for the harness", t: now }],
+  update: { available: true, current: "1.0.0", latest: "1.1.0", notes: "Better Amazon detection.", url: "https://example.com/FakeSale.zip" },
+};
+const session = { "tab:1": "b" };
+const area = (o) => ({
+  get: async (k) => k == null ? { ...o } : Object.fromEntries((Array.isArray(k) ? k : [k]).filter((x) => x in o).map((x) => [x, o[x]])),
+  set: async (v) => Object.assign(o, v), remove: async (k) => [].concat(k).forEach((x) => delete o[x]),
+});
+const chromeMock = {
+  runtime: { getManifest: () => ({ version: "1.0.0" }), getURL: (p) => "/" + p,
+    sendMessage: async () => ({ checkedAt: now, current: "1.0.0", latest: "1.0.0", available: false }) },
+  storage: { local: area(store), session: area(session) },
+  tabs: { query: async () => [{ id: 1 }], create: ({ url }) => open(url) },
+};
+const f = document.getElementById("f");
+f.onload = () => {};
+// Install the mock before any module in the frame runs.
+f.src = "about:blank";
+setTimeout(async () => {
+  const html = await (await fetch("/app/app.html")).text();
+  const doc = f.contentDocument;
+  f.contentWindow.chrome = chromeMock;
+  doc.open();
+  doc.write(html.replace("<head>", '<head><base href="/app/">'));
+  doc.close();
+}, 0);
+</script></body></html>

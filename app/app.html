@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FakeSale</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="top">
+    <button id="back" class="icon-btn" hidden title="Back to all items" aria-label="Back">←</button>
+    <h1 id="title">FakeSale</h1>
+    <span class="spacer"></span>
+    <button id="openTab" class="icon-btn" title="Open in a full tab" aria-label="Open in a full tab">⤢</button>
+    <button id="settingsBtn" class="icon-btn" title="Settings" aria-label="Settings">⚙︎</button>
+  </header>
+
+  <div id="banners"></div>
+
+  <main>
+    <section id="listView">
+      <div id="current"></div>
+      <div class="controls">
+        <input id="search" type="search" placeholder="Search items or stores" aria-label="Search">
+        <select id="sort" aria-label="Sort">
+          <option value="recent">Recently viewed</option>
+          <option value="claimed">Biggest claimed discount</option>
+          <option value="drop">Biggest real drop</option>
+          <option value="visits">Most visits</option>
+          <option value="name">Name</option>
+        </select>
+      </div>
+      <div class="chips" role="tablist" id="filters">
+        <button data-f="all" class="chip on">All</button>
+        <button data-f="fake" class="chip">Fake sales</button>
+        <button data-f="real" class="chip">Real deals</button>
+        <button data-f="unverified" class="chip">Unverified</button>
+        <button data-f="up" class="chip">Price up</button>
+      </div>
+      <ul id="list" class="list"></ul>
+      <p id="empty" class="empty" hidden>
+        Nothing logged yet. Browse to any product page and FakeSale will start its history automatically.
+      </p>
+    </section>
+
+    <section id="detailView" hidden></section>
+
+    <section id="settingsView" hidden>
+      <h2>Updates</h2>
+      <p id="versionLine" class="muted"></p>
+      <button id="checkUpdates" class="btn">Check for Updates…</button>
+      <p id="updateResult" class="muted"></p>
+      <label class="field">
+        <span>Update source <span class="muted">(leave empty for the built-in GitHub feed)</span></span>
+        <input id="updateSource" type="url" placeholder="https://…/latest.json">
+      </label>
+      <h2>Your data</h2>
+      <p class="muted">Everything stays in this browser. Nothing is sent anywhere.</p>
+      <div class="row">
+        <button id="export" class="btn">Export backup</button>
+        <button id="import" class="btn">Import backup</button>
+        <input id="importFile" type="file" accept=".json,application/json" hidden>
+      </div>
+      <p id="dataResult" class="muted"></p>
+      <h2>About</h2>
+      <p><a id="ghLink" target="_blank">FakeSale on GitHub</a> · <a id="errLink" target="_blank">Error code list</a></p>
+    </section>
+  </main>
+
+  <div id="tooltip" class="tooltip" hidden></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

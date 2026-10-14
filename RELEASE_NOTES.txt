@@ -1,0 +1,1 @@
+First release: logs every product page you visit, shows price history, and flags fake sales.
