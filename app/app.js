@@ -1,6 +1,7 @@
 import { getAllItems, getItem, putItem, deleteItem, getSettings, saveSettings, logError, rebuildAliases } from "../src/shared/storage.js";
 import { analyze, fmt } from "../src/shared/verdict.js";
 import { describe, detailsText, ERROR_HOVER, ERROR_LIST_URL, REPO } from "../src/shared/errors.js";
+import { propsFor, urlMatches, suggestPattern } from "../src/shared/rules.js";
 
 const VERSION = chrome.runtime.getManifest().version;
 const $ = (s) => document.querySelector(s);
@@ -16,6 +17,13 @@ if (isFull) { document.body.classList.add("full"); $("#openTab").hidden = true; 
 let items = [];
 let filter = "all";
 let pageIds = null; // when set, the list shows only items logged on the current tab's page
+let rules = [];      // property rules from Settings
+let propFilter = ""; // JSON ["Prop","Value"], or "" for any
+let tabUrl = null;   // the page the popup was opened on (for "Use the current tab's address")
+const propChips = (props) => {
+  const e = Object.entries(props);
+  return e.length ? `<span class="props">${e.map(([k, v]) => `<span class="prop" title="${esc(k)}: ${esc(v)}">${k === "Condition" ? "" : `${esc(k)}: `}<b>${esc(v)}</b></span>`).join("")}</span>` : "";
+};
 
 // ---------- errors: every one shows a code, hover text, a "?" link, and Copy Details ----------
 
@@ -86,17 +94,32 @@ function row(item, v) {
   return `<li class="item" data-id="${esc(item.id)}">
     ${img}
     <div><div class="name">${esc(item.name || item.url)}</div>
-      <div class="sub">${pill(v)} <span>${esc(item.host)}</span> · <span>${item.visits.length} visit${item.visits.length === 1 ? "" : "s"}</span></div></div>
+      <div class="sub">${pill(v)} ${propChips(propsFor(item, rules))} <span>${esc(item.host)}</span> · <span>${item.visits.length} visit${item.visits.length === 1 ? "" : "s"}</span></div></div>
     <div class="prices"><div class="now">${fmt(last.price, last.currency)}</div>
       ${last.original ? `<div class="was">${fmt(last.original, last.currency)}</div>` : ""}${sparkline(item)}</div>
   </li>`;
 }
 
+// The property filter lists every "Prop: Value" that some item has.
+function renderPropFilter() {
+  const sel = $("#propFilter");
+  const seen = new Map();
+  for (const it of items) for (const [k, v] of Object.entries(propsFor(it, rules))) seen.set(JSON.stringify([k, v]), `${k}: ${v}`);
+  if (propFilter && !seen.has(propFilter)) propFilter = "";
+  sel.hidden = !seen.size;
+  sel.innerHTML = `<option value="">Any property</option>` +
+    [...seen].sort((a, b) => a[1].localeCompare(b[1])).map(([val, label]) => `<option value="${esc(val)}"${val === propFilter ? " selected" : ""}>${esc(label)}</option>`).join("");
+}
+
 function renderList() {
   const q = $("#search").value.trim().toLowerCase();
   const sort = $("#sort").value;
-  let rows = items.map((it) => ({ it, v: analyze(it) }));
-  if (q) rows = rows.filter(({ it }) => `${it.name} ${it.host}`.toLowerCase().includes(q));
+  let rows = items.map((it) => ({ it, v: analyze(it), props: propsFor(it, rules) }));
+  if (q) rows = rows.filter(({ it, props }) => `${it.name} ${it.host} ${Object.values(props).join(" ")}`.toLowerCase().includes(q));
+  if (propFilter) {
+    const [k, val] = JSON.parse(propFilter);
+    rows = rows.filter(({ props }) => props[k] === val);
+  }
   if (filter !== "all") rows = rows.filter(({ v }) => v.kind === filter);
   if (pageIds) rows = rows.filter(({ it }) => pageIds.has(it.id));
   $("#pageFilter").hidden = !pageIds;
@@ -235,7 +258,7 @@ async function showDetail(id) {
   $("#detailView").innerHTML = `
     <div class="detail-head">${img}
       <div><div class="name" style="-webkit-line-clamp:3">${esc(item.name)}</div>
-        <div class="sub"><span>${esc(item.host)}</span> · <a href="${esc(item.url)}" target="_blank">Open page</a></div>
+        <div class="sub">${propChips(propsFor(item, rules))} <span>${esc(item.host)}</span> · <a href="${esc(item.url)}" target="_blank">Open page</a></div>
         <div style="margin-top:6px"><span class="now" style="font-size:18px">${fmt(last.price, cur)}</span>
         ${last.original ? ` <span class="was">${fmt(last.original, cur)}</span>` : ""}</div></div></div>
     <div class="verdict ${v.kind}"><strong>${ICON[v.kind]} ${esc(v.label)}</strong>${esc(v.text)}</div>
@@ -271,12 +294,48 @@ function setView(name, title) {
   scrollTo(0, 0);
 }
 
-function showList() { setView("list"); renderList(); }
+function showList() { setView("list"); renderPropFilter(); renderList(); }
+
+// ---------- property rules ----------
+
+function renderRules() {
+  $("#rules").innerHTML = rules.length ? rules.map((r) => {
+    const n = items.filter((it) => propsFor(it, [r])[r.prop] === r.value).length;
+    return `<li><code title="${esc(r.match)}">${esc(r.match)}</code><span>→ ${esc(r.prop)}: <strong>${esc(r.value)}</strong></span>
+      <span class="muted">${n} item${n === 1 ? "" : "s"}</span><button class="icon-btn" data-del="${esc(r.id)}" title="Delete rule" aria-label="Delete rule">✕</button></li>`;
+  }).join("") : `<li class="muted">No rules yet.</li>`;
+}
+
+const saveRules = guard("FS-302", async () => {
+  await saveSettings({ rules });
+  renderRules();
+});
+
+$("#rules").onclick = (e) => {
+  const id = e.target.closest("[data-del]")?.dataset.del;
+  if (!id) return;
+  rules = rules.filter((r) => r.id !== id);
+  saveRules();
+};
+$("#ruleAdd").onclick = () => {
+  const match = $("#ruleMatch").value.trim(), prop = $("#ruleProp").value.trim(), value = $("#ruleValue").value.trim();
+  const msg = $("#ruleMsg");
+  if (!match || !prop || !value) { msg.textContent = "Fill in the address, the property and the value."; return; }
+  if (rules.some((r) => r.match.toLowerCase() === match.toLowerCase() && r.prop === prop && r.value === value)) { msg.textContent = "That rule already exists."; return; }
+  rules.push({ id: Date.now().toString(36), match, prop, value });
+  const n = items.filter((it) => [it.url, ...it.visits.map((v) => v.page)].some((u) => u && urlMatches(match, u))).length;
+  msg.textContent = `Rule added. It matches ${n} item${n === 1 ? "" : "s"} you've already logged.`;
+  $("#ruleMatch").value = ""; $("#ruleValue").value = "";
+  saveRules();
+};
+$("#ruleUseTab").onclick = () => { $("#ruleMatch").value = suggestPattern(tabUrl); $("#ruleValue").focus(); };
 
 async function showSettings() {
   const s = await getSettings();
   $("#updateSource").value = s.updateSource || "";
   $("#logListings").checked = !!s.logListings;
+  $("#ruleUseTab").hidden = !tabUrl || !/^https?:/.test(tabUrl);
+  renderRules();
   $("#versionLine").textContent = `You have FakeSale v${VERSION}.`;
   $("#ghLink").href = `https://github.com/${REPO}`;
   $("#errLink").href = ERROR_LIST_URL;
@@ -287,7 +346,7 @@ async function showSettings() {
 
 const doExport = guard("FS-402", async () => {
   const all = await getAllItems();
-  const blob = new Blob([JSON.stringify({ app: "FakeSale", version: VERSION, exportedAt: new Date().toISOString(), items: all }, null, 1)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify({ app: "FakeSale", version: VERSION, exportedAt: new Date().toISOString(), rules, items: all }, null, 1)], { type: "application/json" });
   const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `fakesale-backup-${new Date().toISOString().slice(0, 10)}.json` });
   a.click();
   $("#dataResult").textContent = `Exported ${all.length} items.`;
@@ -313,6 +372,13 @@ const doImport = guard("FS-401", async (file) => {
       added++;
     }
   }
+  for (const r of Array.isArray(data.rules) ? data.rules : []) {
+    if (r && r.match && r.prop && r.value && !rules.some((x) => x.match === r.match && x.prop === r.prop && x.value === r.value)) {
+      rules.push({ id: r.id || Date.now().toString(36) + rules.length, match: r.match, prop: r.prop, value: r.value });
+    }
+  }
+  await saveSettings({ rules });
+  renderRules();
   await rebuildAliases();
   items = await getAllItems();
   $("#dataResult").textContent = `Imported ${data.items.length} items (${added} new).`;
@@ -325,6 +391,7 @@ $("#current").addEventListener("click", (e) => { const li = e.target.closest(".i
 $("#back").onclick = showList;
 $("#search").oninput = renderList;
 $("#sort").onchange = renderList;
+$("#propFilter").onchange = (e) => { propFilter = e.target.value; renderList(); };
 $("#filters").onclick = (e) => {
   const b = e.target.closest(".chip"); if (!b) return;
   filter = b.dataset.f;
@@ -352,6 +419,12 @@ $("#importFile").onchange = (e) => e.target.files[0] && doImport(e.target.files[
 
 guard("FS-301", async () => {
   items = await getAllItems();
+  rules = (await getSettings()).rules || [];
+  if (!isFull) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
+    tabUrl = tab && tab.url; // available because opening the popup grants activeTab
+  }
+  renderPropFilter();
   await renderBanners();
   renderList();
   await renderCurrent();

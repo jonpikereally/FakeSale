@@ -22,6 +22,7 @@
       <div id="current"></div>
       <div class="controls">
         <input id="search" type="search" placeholder="Search items or stores" aria-label="Search">
+        <select id="propFilter" aria-label="Filter by property" hidden></select>
         <select id="sort" aria-label="Sort">
           <option value="recent">Recently viewed</option>
           <option value="claimed">Biggest claimed discount</option>
@@ -62,6 +63,23 @@
         <span class="muted">Every item in a grid of results gets a price entry, so browsing a "Sale" section builds history for all of it.
         Your list will fill up faster, with items you only scrolled past.</span></span>
       </label>
+      <h2>Property rules</h2>
+      <p class="muted">Label items by where they're sold. For example, everything whose address starts with
+        <code>long-mcquade.com/GearHunter/</code> is <strong>Condition: Used</strong>. Rules also apply to items you've already logged.</p>
+      <ul id="rules" class="rules"></ul>
+      <div class="rule-form">
+        <label class="field"><span>Web address starts with <span class="muted">(* matches anything)</span></span>
+          <input id="ruleMatch" type="text" placeholder="long-mcquade.com/GearHunter/" spellcheck="false"></label>
+        <div class="rule-pair">
+          <label class="field"><span>Property</span><input id="ruleProp" type="text" list="propNames" value="Condition"></label>
+          <label class="field"><span>Value</span><input id="ruleValue" type="text" list="propValues" placeholder="Used"></label>
+        </div>
+        <p class="row" style="margin-top:8px"><button class="btn" id="ruleAdd">Add rule</button>
+          <button class="btn" id="ruleUseTab" hidden>Use the current tab's address</button></p>
+        <p id="ruleMsg" class="muted"></p>
+      </div>
+      <datalist id="propNames"><option>Condition</option><option>Store</option><option>Category</option></datalist>
+      <datalist id="propValues"><option>Used</option><option>New</option><option>Refurbished</option><option>Open box</option><option>Clearance</option></datalist>
       <h2>Your data</h2>
       <p class="muted">Everything stays in this browser. Nothing is sent anywhere.</p>
       <div class="row">
