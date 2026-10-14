@@ -1,1 +1,1 @@
-First release: logs every product page you visit, shows price history, and flags fake sales.
+New: optionally log every item on search, category and collection pages (Settings > What to log). Fixed: category pages could be logged as if you'd viewed their first item.

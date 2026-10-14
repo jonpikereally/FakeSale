@@ -14,6 +14,7 @@ export const ERRORS = {
   "FS-102": ["The update feed returned something unreadable.", "Clear the Update source in Settings to go back to the built-in feed."],
   "FS-201": ["Something went wrong while reading a product page.", "The page still works. Copy the details and open an issue with the page link."],
   "FS-202": ["A product page was found but couldn't be saved.", "Reload the page. If it keeps happening, copy the details."],
+  "FS-203": ["Something went wrong while reading the items on a search or category page.", "Product pages still work. Copy the details and open an issue with the page link."],
   "FS-301": ["Couldn't read your saved price history.", "Restart Brave. If it persists, export a backup and copy the details."],
   "FS-302": ["Couldn't save a change to your price history.", "Your disk may be full. Free some space and try again."],
   "FS-401": ["That file isn't a FakeSale backup.", "Choose a .json file made by FakeSale's Export button."],

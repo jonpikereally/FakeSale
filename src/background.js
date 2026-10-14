@@ -1,4 +1,4 @@
-import { addVisit, getItem, putItem, newItem, itemId, logError, getSettings } from "./shared/storage.js";
+import { addVisit, findItem, saveItemWithAlias, newItem, logError, getSettings, rebuildAliases } from "./shared/storage.js";
 import { analyze } from "./shared/verdict.js";
 import { REPO } from "./shared/errors.js";
 
@@ -18,18 +18,40 @@ const BADGES = {
 let queue = Promise.resolve();
 const serial = (fn) => (queue = queue.then(fn, fn));
 
+async function save(obs) {
+  const item = addVisit((await findItem(obs)) || newItem(obs), obs);
+  await saveItemWithAlias(item, obs.alias);
+  return item;
+}
+
+async function setBadge(tabId, text, color, title) {
+  if (tabId == null) return;
+  await chrome.action.setBadgeText({ tabId, text }).catch(() => {});
+  await chrome.action.setBadgeBackgroundColor({ tabId, color }).catch(() => {});
+  await chrome.action.setTitle({ tabId, title }).catch(() => {});
+}
+
 async function record(obs, tabId) {
-  const id = itemId(obs);
-  const item = addVisit((await getItem(id)) || newItem(obs), obs);
-  await putItem(item);
+  const item = await save(obs);
   const v = analyze(item);
   const [text, color] = BADGES[v.kind] || BADGES.new;
-  if (tabId != null) {
-    await chrome.action.setBadgeText({ tabId, text }).catch(() => {});
-    await chrome.action.setBadgeBackgroundColor({ tabId, color }).catch(() => {});
-    await chrome.action.setTitle({ tabId, title: `FakeSale: ${v.label}. ${v.text}` }).catch(() => {});
+  await setBadge(tabId, text, color, `FakeSale: ${v.label}. ${v.text}`);
+  await chrome.storage.session.set({ [`tab:${tabId}`]: item.id, [`tabList:${tabId}`]: [] }).catch(() => {});
+}
+
+// A search or category page: log every item in the grid. The badge shows how
+// many were logged, red if any of them is a fake sale.
+async function recordListing(list, tabId) {
+  const key = `tabList:${tabId}`;
+  const ids = new Set((await chrome.storage.session.get(key).catch(() => ({})))[key] || []);
+  for (const obs of list) {
+    try { ids.add((await save(obs)).id); } catch (e) { await logError(String(e).includes("QUOTA") ? "FS-302" : "FS-202", `${e && e.stack || e}\nPage: ${obs.host}`); }
   }
-  await chrome.storage.session.set({ [`tab:${tabId}`]: id }).catch(() => {});
+  const items = (await chrome.storage.local.get([...ids].map((id) => `item:${id}`)));
+  const fakes = Object.values(items).filter((it) => analyze(it).kind === "fake").length;
+  await setBadge(tabId, String(ids.size), fakes ? BADGES.fake[1] : BADGES.new[1],
+    `FakeSale logged ${ids.size} item${ids.size === 1 ? "" : "s"} on this page${fakes ? `; ${fakes} look like fake sales` : ""}.`);
+  await chrome.storage.session.set({ [key]: [...ids], [`tab:${tabId}`]: null }).catch(() => {});
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
@@ -37,6 +59,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     serial(() => record(msg.data, sender.tab && sender.tab.id)).catch((e) =>
       logError(String(e).includes("QUOTA") ? "FS-302" : "FS-202", `${e && e.stack || e}\nPage: ${msg.data && msg.data.host}`)
     );
+  } else if (msg.type === "listing") {
+    serial(() => recordListing(msg.data || [], sender.tab && sender.tab.id)).catch((e) => logError("FS-203", e && e.stack || e));
   } else if (msg.type === "error") {
     logError(msg.code, msg.details);
   } else if (msg.type === "checkUpdates") {
@@ -96,4 +120,7 @@ async function checkForUpdates(manual = false) {
 chrome.alarms.create("updates", { periodInMinutes: 6 * 60 });
 chrome.alarms.onAlarm.addListener((a) => a.name === "updates" && checkForUpdates());
 chrome.runtime.onStartup.addListener(() => setTimeout(checkForUpdates, 5000));
-chrome.runtime.onInstalled.addListener(() => setTimeout(checkForUpdates, 5000));
+chrome.runtime.onInstalled.addListener(() => {
+  rebuildAliases().catch((e) => logError("FS-301", e && e.stack || e));
+  setTimeout(checkForUpdates, 5000);
+});
