@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "url": "FakeSale.zip",
-  "notes": "New: optionally log every item on search, category and collection pages (Settings > What to log). Fixed: category pages could be logged as if you'd viewed their first item."
+  "notes": "New: property rules (Settings > Property rules), e.g. everything under long-mcquade.com/GearHunter/ is Condition: Used, with a property filter in the list. Stores' own Used/Refurbished labels are picked up automatically. Long & McQuade GearHunter item pages are now read. Fixed: monthly financing amounts (\"$24/mo\") could be taken as the price on list pages, and labelled \"Regular Price\" amounts are now recognised as the \"was\" price."
 }
