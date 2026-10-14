@@ -19,7 +19,8 @@ const store = {
   errors: [{ code: "FS-202", details: "Example error for the harness", t: now }],
   update: { available: true, current: "1.0.0", latest: "1.1.0", notes: "Better Amazon detection.", url: "https://example.com/FakeSale.zip" },
 };
-const session = { "tab:1": "b" };
+store["item:c"].visits[0].list = true;
+const session = new URLSearchParams(location.search).has("list") ? { "tabList:1": ["a", "c", "d"] } : { "tab:1": "b" };
 const area = (o) => ({
   get: async (k) => k == null ? { ...o } : Object.fromEntries((Array.isArray(k) ? k : [k]).filter((x) => x in o).map((x) => [x, o[x]])),
   set: async (v) => Object.assign(o, v), remove: async (k) => [].concat(k).forEach((x) => delete o[x]),

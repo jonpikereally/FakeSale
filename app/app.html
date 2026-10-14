@@ -37,6 +37,7 @@
         <button data-f="unverified" class="chip">Unverified</button>
         <button data-f="up" class="chip">Price up</button>
       </div>
+      <div id="pageFilter" class="page-filter" hidden>Showing items from this page only. <button class="btn" id="clearPage">Show all</button></div>
       <ul id="list" class="list"></ul>
       <p id="empty" class="empty" hidden>
         Nothing logged yet. Browse to any product page and FakeSale will start its history automatically.
@@ -53,6 +54,13 @@
       <label class="field">
         <span>Update source <span class="muted">(leave empty for the built-in GitHub feed)</span></span>
         <input id="updateSource" type="url" placeholder="https://…/latest.json">
+      </label>
+      <h2>What to log</h2>
+      <label class="toggle">
+        <input id="logListings" type="checkbox">
+        <span><strong>Also log items on search &amp; category pages</strong><br>
+        <span class="muted">Every item in a grid of results gets a price entry, so browsing a "Sale" section builds history for all of it.
+        Your list will fill up faster, with items you only scrolled past.</span></span>
       </label>
       <h2>Your data</h2>
       <p class="muted">Everything stays in this browser. Nothing is sent anywhere.</p>

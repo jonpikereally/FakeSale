@@ -12,6 +12,7 @@ Codes are grouped: `1xx` updates, `2xx` reading product pages, `3xx` saved data,
 | `FS-102` | The update feed answered, but not with a valid `latest.json`. | Clear the Update source in Settings to go back to the built-in GitHub feed. If you're already on the built-in feed, open an issue. |
 | `FS-201` | The page reader crashed while looking at a product page. The page itself is unaffected. | Copy the details and open an issue with the page link so the detector can be fixed for that store. |
 | `FS-202` | A product price was found but saving the visit failed. | Reload the page. If it keeps happening, copy the details and open an issue. |
+| `FS-203` | The grid reader failed on a search, category or collection page (only when "Log items on listing pages" is on). | Product pages still work. Copy the details and open an issue with the page link. |
 | `FS-301` | FakeSale couldn't read your saved price history. | Restart Brave. If it persists, try Settings → Export backup, then copy the details. |
 | `FS-302` | Saving a change to your price history failed, often because the disk is full. | Free some disk space and try again. |
 | `FS-401` | The file you chose to import isn't a FakeSale backup. | Choose a `.json` file made by FakeSale's Export backup button. |

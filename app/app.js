@@ -1,4 +1,4 @@
-import { getAllItems, getItem, putItem, deleteItem, getSettings, saveSettings, logError } from "../src/shared/storage.js";
+import { getAllItems, getItem, putItem, deleteItem, getSettings, saveSettings, logError, rebuildAliases } from "../src/shared/storage.js";
 import { analyze, fmt } from "../src/shared/verdict.js";
 import { describe, detailsText, ERROR_HOVER, ERROR_LIST_URL, REPO } from "../src/shared/errors.js";
 
@@ -15,6 +15,7 @@ if (isFull) { document.body.classList.add("full"); $("#openTab").hidden = true; 
 
 let items = [];
 let filter = "all";
+let pageIds = null; // when set, the list shows only items logged on the current tab's page
 
 // ---------- errors: every one shows a code, hover text, a "?" link, and Copy Details ----------
 
@@ -97,6 +98,8 @@ function renderList() {
   let rows = items.map((it) => ({ it, v: analyze(it) }));
   if (q) rows = rows.filter(({ it }) => `${it.name} ${it.host}`.toLowerCase().includes(q));
   if (filter !== "all") rows = rows.filter(({ v }) => v.kind === filter);
+  if (pageIds) rows = rows.filter(({ it }) => pageIds.has(it.id));
+  $("#pageFilter").hidden = !pageIds;
   const drop = ({ it, v }) => (v.typical ? 1 - it.visits.at(-1).price / v.typical : 0);
   const sorters = {
     recent: (a, b) => b.it.lastSeen - a.it.lastSeen,
@@ -117,11 +120,24 @@ async function renderCurrent() {
   if (isFull) return;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) return;
-  const key = `tab:${tab.id}`;
-  const id = (await chrome.storage.session.get(key))[key];
-  const item = id && items.find((i) => i.id === id);
-  if (!item) return;
-  box.innerHTML = `<div class="current"><div class="label">This page</div><ul class="list">${row(item, analyze(item))}</ul></div>`;
+  const key = `tab:${tab.id}`, listKey = `tabList:${tab.id}`;
+  const got = await chrome.storage.session.get([key, listKey]);
+  const item = got[key] && items.find((i) => i.id === got[key]);
+  if (item) {
+    box.innerHTML = `<div class="current"><div class="label">This page</div><ul class="list">${row(item, analyze(item))}</ul></div>`;
+    return;
+  }
+  const ids = new Set(got[listKey] || []);
+  const onPage = items.filter((i) => ids.has(i.id));
+  if (!onPage.length) return;
+  const counts = {};
+  onPage.forEach((i) => { const k = analyze(i).kind; counts[k] = (counts[k] || 0) + 1; });
+  const parts = [["fake", "fake"], ["real", "real deals"], ["unverified", "unverified"], ["up", "price up"]]
+    .filter(([k]) => counts[k]).map(([k, label]) => `<span class="pill ${k}">${ICON[k]} ${counts[k]} ${label}</span>`).join(" ");
+  box.innerHTML = `<div class="current"><div class="label">This page</div>
+    <div>Logged <strong>${onPage.length}</strong> item${onPage.length === 1 ? "" : "s"} from this list. ${parts}</div>
+    <p class="row" style="margin:8px 0 0"><button class="btn" id="showPage">Show them</button></p></div>`;
+  $("#showPage").onclick = () => { pageIds = ids; renderList(); };
 }
 
 // ---------- detail ----------
@@ -211,7 +227,7 @@ async function showDetail(id) {
   const img = item.image ? `<img class="thumb" src="${esc(item.image)}" alt="" referrerpolicy="no-referrer">` : `<div class="thumb none"></div>`;
   const visitsRows = [...item.visits].reverse().map((x) => {
     const pct = x.original ? Math.round((1 - x.price / x.original) * 100) + "%" : "";
-    return `<tr><td>${esc(whenTime(x.t))}${x.n > 1 ? ` <span class="muted">(×${x.n})</span>` : ""}</td>
+    return `<tr><td>${esc(whenTime(x.t))}${x.n > 1 ? ` <span class="muted">(×${x.n})</span>` : ""}${x.list ? `<span class="tag" title="Seen in a search or category list, not on the item's own page">list</span>` : ""}</td>
       <td class="num">${esc(fmt(x.price, x.currency))}</td><td class="num">${x.original ? esc(fmt(x.original, x.currency)) : "—"}</td><td class="num">${pct}</td></tr>`;
   }).join("");
   const hasWas = item.visits.some((x) => x.original);
@@ -260,6 +276,7 @@ function showList() { setView("list"); renderList(); }
 async function showSettings() {
   const s = await getSettings();
   $("#updateSource").value = s.updateSource || "";
+  $("#logListings").checked = !!s.logListings;
   $("#versionLine").textContent = `You have FakeSale v${VERSION}.`;
   $("#ghLink").href = `https://github.com/${REPO}`;
   $("#errLink").href = ERROR_LIST_URL;
@@ -296,6 +313,7 @@ const doImport = guard("FS-401", async (file) => {
       added++;
     }
   }
+  await rebuildAliases();
   items = await getAllItems();
   $("#dataResult").textContent = `Imported ${data.items.length} items (${added} new).`;
 });
@@ -326,6 +344,8 @@ $("#checkUpdates").onclick = guard("FS-999", async (e) => {
   else if (u.available) out.append(updateBanner(u));
   else out.textContent = `FakeSale is up to date (v${VERSION}).`;
 });
+$("#logListings").onchange = guard("FS-302", (e) => saveSettings({ logListings: e.target.checked }));
+$("#clearPage").onclick = () => { pageIds = null; renderList(); };
 $("#export").onclick = doExport;
 $("#import").onclick = () => $("#importFile").click();
 $("#importFile").onchange = (e) => e.target.files[0] && doImport(e.target.files[0]);
