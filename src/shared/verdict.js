@@ -17,7 +17,7 @@ const median = (xs) => {
 export function analyze(item) {
   const visits = item.visits || [];
   const last = visits[visits.length - 1];
-  if (!last) return { kind: "new", label: "New", text: "No visits recorded yet." };
+  if (!last) return { kind: "new", label: "First look", text: "No visits recorded yet." };
 
   const prices = visits.map((v) => v.price);
   const low = Math.min(...prices);
@@ -59,7 +59,7 @@ export function analyze(item) {
   if (earlier.length) {
     return { ...base, kind: "steady", label: "Steady", text: `Same price as your earlier visits (${money(typical)}).` };
   }
-  return { ...base, kind: "new", label: "New", text: "First visit. Come back later and FakeSale will compare." };
+  return { ...base, kind: "new", label: "First look", text: "First visit. Come back later and FakeSale will compare." };
 }
 
 export function fmt(n, currency) {

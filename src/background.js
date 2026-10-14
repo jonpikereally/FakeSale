@@ -1,4 +1,4 @@
-import { addVisit, findItem, saveItemWithAlias, newItem, logError, getSettings, rebuildAliases } from "./shared/storage.js";
+import { addVisit, findItem, saveItemWithAlias, newItem, logError, getSettings, rebuildAliases, dropV11GenericListVisits } from "./shared/storage.js";
 import { analyze } from "./shared/verdict.js";
 import { REPO } from "./shared/errors.js";
 
@@ -121,6 +121,6 @@ chrome.alarms.create("updates", { periodInMinutes: 6 * 60 });
 chrome.alarms.onAlarm.addListener((a) => a.name === "updates" && checkForUpdates());
 chrome.runtime.onStartup.addListener(() => setTimeout(checkForUpdates, 5000));
 chrome.runtime.onInstalled.addListener(() => {
-  rebuildAliases().catch((e) => logError("FS-301", e && e.stack || e));
+  serial(() => dropV11GenericListVisits().then(rebuildAliases)).catch((e) => logError("FS-301", e && e.stack || e));
   setTimeout(checkForUpdates, 5000);
 });

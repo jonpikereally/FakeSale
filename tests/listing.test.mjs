@@ -61,3 +61,17 @@ await S.rebuildAliases();
 const again = await record({ host: "legacy.test", url: "https://legacy.test/item/9?ref=abc", sku: "SKU9", name: "Old", price: 5, source: "list:page" }, D);
 assert.equal(again.id, old.id);
 console.log("All listing and matching tests passed.");
+
+// v1.2.1 repair: v1.1 generic-reader grid sightings are dropped, others kept.
+for (const k of Object.keys(mem)) delete mem[k];
+const lm = { id: "long-mcquade.com|/gearhunter/935664/x.htm", host: "long-mcquade.com", url: "https://www.long-mcquade.com/GearHunter/935664/x.htm", firstSeen: 0, lastSeen: 0,
+  visits: [{ t: 0, price: 267, source: "list:page", list: true }] };
+const mixed = { id: "shop.test|SKU", host: "shop.test", url: "https://shop.test/p", firstSeen: 0, lastSeen: 2,
+  visits: [{ t: 0, price: 5, source: "list:page", list: true }, { t: 1, price: 9, source: "json-ld" }, { t: 2, price: 8, source: "list:page", list: true, page: "https://shop.test/sale" }] };
+Object.assign(mem, { ["item:" + lm.id]: lm, ["url:long-mcquade.com/gearhunter/935664/x.htm"]: lm.id, ["item:" + mixed.id]: mixed });
+assert.equal(await S.dropV11GenericListVisits(), 2);
+assert.ok(!("item:" + lm.id in mem) && !Object.values(mem).includes(lm.id));
+assert.deepEqual(mem["item:" + mixed.id].visits.map((v) => v.price), [9, 8]);
+assert.equal(mem["item:" + mixed.id].firstSeen, 1);
+assert.equal(await S.dropV11GenericListVisits(), 0); // runs once
+console.log("Repair migration tests passed.");

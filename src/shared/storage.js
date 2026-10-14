@@ -39,6 +39,34 @@ export async function saveItemWithAlias(item, alias) {
   await chrome.storage.local.set({ [ITEM + item.id]: item, [ALIAS + (alias || aliasKey(item.url))]: item.id });
 }
 
+// One-time repair (v1.2.1): v1.1's generic grid reader could log a monthly
+// financing amount ("$267/mo") as the price, and missed labelled "Regular
+// Price" originals. Its sightings are recognisable (source "list:page", no
+// page field), so drop them; items left empty are deleted and get re-logged
+// correctly next time. Product-page visits and other readers are untouched.
+export async function dropV11GenericListVisits() {
+  const { migrations = [] } = await chrome.storage.local.get("migrations");
+  if (migrations.includes("1.2.1-generic-list")) return 0;
+  const all = await chrome.storage.local.get(null);
+  const patch = {}, remove = [];
+  let dropped = 0;
+  for (const [k, item] of Object.entries(all)) {
+    if (!k.startsWith(ITEM) || !Array.isArray(item.visits)) continue;
+    const keep = item.visits.filter((v) => !(v.source === "list:page" && v.list && !v.page));
+    if (keep.length === item.visits.length) continue;
+    dropped += item.visits.length - keep.length;
+    if (keep.length) {
+      patch[k] = { ...item, visits: keep, firstSeen: keep[0].t, lastSeen: keep[keep.length - 1].t };
+    } else {
+      remove.push(k, ...Object.keys(all).filter((a) => a.startsWith(ALIAS) && all[a] === item.id));
+    }
+  }
+  patch.migrations = [...migrations, "1.2.1-generic-list"];
+  await chrome.storage.local.set(patch);
+  if (remove.length) await chrome.storage.local.remove(remove);
+  return dropped;
+}
+
 // One-time upgrade for items saved before aliases existed (v1.0.0).
 export async function rebuildAliases() {
   const all = await chrome.storage.local.get(null);
