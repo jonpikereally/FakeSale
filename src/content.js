@@ -18,6 +18,21 @@
     ["CHF", "CHF"], ["kr", "SEK"], ["zł", "PLN"], ["$", null],
   ];
   const MONEY = /[$€£¥₹₩]|\b(USD|CAD|EUR|GBP|AUD|CHF)\b/;
+  // "$24/mo", "or 4 payments of $10": instalments, not the price.
+  const FINANCING = /\/\s*(mo|month|wk|week|yr|year)\b|per\s+(month|week)|a\s+month|monthly|payments?\s+of|financ|\bapr\b/i;
+  // Text labels that mark a "was" price even when it isn't struck through.
+  const WAS_LABEL = /\b(regular|reg\.?|was|compare\s+at|list\s+price|msrp|original(ly)?|retail|before)\b/i;
+
+  // schema.org itemCondition -> a plain word (same as conditionFrom in src/shared/rules.js).
+  function condition(raw) {
+    const s = String(raw || "").toLowerCase();
+    if (!s) return null;
+    if (s.includes("refurb")) return "Refurbished";
+    if (s.includes("used")) return "Used";
+    if (s.includes("damaged")) return "Damaged";
+    if (s.includes("new")) return "New";
+    return null;
+  }
 
   function detectCurrency(text) {
     const iso = text.match(/\b(USD|CAD|EUR|GBP|AUD|NZD|JPY|INR|CHF|SEK|NOK|DKK|PLN|MXN|BRL|HKD|KRW)\b/);
@@ -157,6 +172,8 @@
       price: found.price,
       original: found.original || null,
       currency: found.currency ? String(found.currency).toUpperCase().slice(0, 3) : null,
+      condition: found.condition || null,
+      page: String(found.source).startsWith("list:") ? cleanUrl(location.href) : null,
       source: found.source,
     };
   }
@@ -180,7 +197,8 @@
         if (!pick) continue;
         const { price, original, currency } = offerPrices(pick);
         if (!price) continue;
-        return { source: "json-ld", name: node.name, sku: skuOf(node), image: firstImage(node), price, original, currency };
+        return { source: "json-ld", name: node.name, sku: skuOf(node), image: firstImage(node), price, original, currency,
+          condition: condition(pick.itemCondition || node.itemCondition) };
       }
     }
     return null;
@@ -198,6 +216,7 @@
     const cur = $('[itemprop="priceCurrency"]', scope);
     const img = $('[itemprop="image"]', scope);
     const skuEl = $('[itemprop="sku"]', scope);
+    const condEl = $('[itemprop="itemCondition"]', scope);
     return {
       source: "microdata",
       name: (($('[itemprop="name"]', scope) || {}).content) || text($('[itemprop="name"]', scope)) || null,
@@ -206,6 +225,7 @@
       price,
       original: null,
       currency: cur ? cur.getAttribute("content") || text(cur) : null,
+      condition: condition(condEl && (condEl.getAttribute("content") || condEl.getAttribute("href") || text(condEl))),
     };
   }
 
@@ -277,6 +297,27 @@
     };
   }
 
+  // Long & McQuade pages publish no structured product data.
+  function fromLongMcQuade() {
+    if (!/(^|\.)long-mcquade\.com$/.test(location.hostname)) return null;
+    const id = (location.pathname.match(/\/GearHunter\/(\d+)\//i) || [])[1];
+    const saleEl = $(".gear-hunter-sale-price");
+    const price = saleEl && parsePrice(text(saleEl));
+    if (!id || !price) return null;
+    const regEl = $(".gear-hunter-regular-price");
+    const was = regEl && parsePrice(text(regEl));
+    const img = $("img.item-img");
+    return {
+      source: "long-mcquade",
+      name: text($("h2.text-capitalize")) || document.title.replace(/^Gear Hunter \|\s*/i, ""),
+      sku: `GH${id}`,
+      image: img && (img.currentSrc || img.src),
+      price,
+      original: was && was > price ? was : null,
+      currency: "CAD",
+    };
+  }
+
   // Shopify variants carry compare_at_price, the store's own "was" price.
   function shopifyVariant(product, variantId, inCents) {
     const v = (product.variants || []).find((x) => String(x.id) === variantId) || (product.variants || [])[0];
@@ -311,6 +352,7 @@
 
   function looksStruck(el) {
     if (["S", "DEL", "STRIKE"].includes(el.tagName)) return true;
+    if (WAS_LABEL.test(text(el)) && text(el).length < 40) return true;
     const cls = `${el.className && el.className.baseVal != null ? el.className.baseVal : el.className} ${el.id}`;
     if (WAS_CLASS.test(cls)) return true;
     return getComputedStyle(el).textDecorationLine.includes("line-through");
@@ -336,6 +378,7 @@
       for (const el of box.querySelectorAll("*")) {
         const t = text(el);
         if (!t || t.length > 40 || el.children.length > 2) continue;
+        if (FINANCING.test(t)) continue;
         const p = parsePrice(t);
         if (p && p > price && p <= price * 10 && looksStruck(el) && isVisible(el)) return p;
       }
@@ -357,7 +400,7 @@
   }
 
   async function detectProduct() {
-    let found = fromAmazon() || fromJsonLd() || fromMicrodata() || fromMeta();
+    let found = fromAmazon() || fromLongMcQuade() || fromJsonLd() || fromMicrodata() || fromMeta();
     let shop = null;
     try { shop = await fromShopify(); } catch { /* not a Shopify product page */ }
     if (shop) {
@@ -388,7 +431,8 @@
           const { price, original, currency } = offerPrices(offer);
           const url = p.url || offer.url || el.url;
           if (!price || !url) continue;
-          out.push(finish({ source: "list:json-ld", name: p.name, sku: skuOf(p), image: firstImage(p), price, original, currency }, url));
+          out.push(finish({ source: "list:json-ld", name: p.name, sku: skuOf(p), image: firstImage(p), price, original, currency,
+            condition: condition(offer.itemCondition || p.itemCondition) }, url));
         }
       }
     }
@@ -478,7 +522,7 @@
     for (const el of card.querySelectorAll("*")) {
       if (el.children.length > 2) continue;
       const t = text(el);
-      if (!t || t.length > 30 || !/\d/.test(t)) continue;
+      if (!t || t.length > 40 || !/\d/.test(t) || FINANCING.test(t)) continue;
       const p = parsePrice(t);
       if (p && p > price && p <= price * 10 && (looksStruck(el) || (el.parentElement && looksStruck(el.parentElement))) && (!best || p > best)) best = p;
     }
@@ -500,7 +544,7 @@
     for (let el = walker.nextNode(); el && count < 20000; el = walker.nextNode(), count++) {
       if (el.children.length > 2 || ["SCRIPT", "STYLE", "OPTION", "INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)) continue;
       const t = text(el);
-      if (t.length > 30 || !MONEY.test(t) || !/\d/.test(t)) continue;
+      if (t.length > 40 || !MONEY.test(t) || !/\d/.test(t) || FINANCING.test(t)) continue;
       priceEls.push(el);
     }
     const cards = new Map();
@@ -524,7 +568,7 @@
       for (const el of card.querySelectorAll("*")) {
         if (el.children.length > 2) continue;
         const t = text(el);
-        if (t.length > 30 || !MONEY.test(t)) continue;
+        if (t.length > 40 || !MONEY.test(t) || FINANCING.test(t) || (el.parentElement && FINANCING.test(text(el.parentElement)) && text(el.parentElement).length < 60)) continue;
         const p = parsePrice(t);
         if (p) prices.push({ p, struck: looksStruck(el) || (el.parentElement !== card && looksStruck(el.parentElement)), t });
       }

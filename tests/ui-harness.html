@@ -16,10 +16,14 @@ const store = {
   "item:c": mk("c", "Cast Iron Skillet 12 inch", "kitchen.test", [[-2, 39.95, 59.95]]),
   "item:d": mk("d", "Running Shoes", "shoes.test", [[-20, 120], [-8, 120], [-0.1, 135, 160]]),
   "item:e": mk("e", "USB-C Cable 2m", "cables.test", [[-0.5, 12.99]]),
+  "item:gh": Object.assign(mk("gh", "FENDER KINGFISH DELTA DAY TELE DELUXE", "long-mcquade.com", [[-12, 2299.99, 3379.99], [-0.3, 2299.99, 3379.99]]),
+    { url: "https://www.long-mcquade.com/GearHunter/1150302/FENDER-KINGFISH-DELTA-DAY-TELE-DELUXE.htm", currency: "CAD" }),
+  settings: { rules: [{ id: "r1", match: "long-mcquade.com/GearHunter/", prop: "Condition", value: "Used" }] },
   errors: [{ code: "FS-202", details: "Example error for the harness", t: now }],
   update: { available: true, current: "1.0.0", latest: "1.1.0", notes: "Better Amazon detection.", url: "https://example.com/FakeSale.zip" },
 };
 store["item:c"].visits[0].list = true;
+store["item:b"].condition = "Refurbished";
 const session = new URLSearchParams(location.search).has("list") ? { "tabList:1": ["a", "c", "d"] } : { "tab:1": "b" };
 const area = (o) => ({
   get: async (k) => k == null ? { ...o } : Object.fromEntries((Array.isArray(k) ? k : [k]).filter((x) => x in o).map((x) => [x, o[x]])),
@@ -29,7 +33,7 @@ const chromeMock = {
   runtime: { getManifest: () => ({ version: "1.0.0" }), getURL: (p) => "/" + p,
     sendMessage: async () => ({ checkedAt: now, current: "1.0.0", latest: "1.0.0", available: false }) },
   storage: { local: area(store), session: area(session) },
-  tabs: { query: async () => [{ id: 1 }], create: ({ url }) => open(url) },
+  tabs: { query: async () => [{ id: 1, url: "https://www.long-mcquade.com/GearHunter/guitars/" }], create: ({ url }) => open(url) },
 };
 const f = document.getElementById("f");
 f.onload = () => {};

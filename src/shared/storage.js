@@ -1,7 +1,8 @@
 // All data stays in this browser (chrome.storage.local). One key per item:
 //   "item:<id>" -> { id, name, host, url, image, sku, currency, firstSeen, lastSeen, visits: [...] }
-//   visit       -> { t, price, original, currency, source, n, list }
-//                  (n = reloads folded in; list = seen in a search/category grid)
+//   visit       -> { t, price, original, currency, source, n, list, page }
+//                  (n = reloads folded in; list = seen in a search/category grid;
+//                   page = that grid's address, which property rules can match)
 //   "url:<alias>" -> item id. Lets a product seen in a grid and on its own
 //                  page share one history even when the store labels them differently.
 // Plus "errors" (last 100 coded errors) and "settings".
@@ -82,6 +83,7 @@ export function addVisit(item, obs, t = Date.now()) {
   } else {
     const visit = { t, price: obs.price, original: obs.original, currency: obs.currency, source: obs.source };
     if (fromList) visit.list = true;
+    if (obs.page) visit.page = obs.page; // the list page it was seen on (used by property rules)
     item.visits.push(visit);
   }
   // A product page knows the item best; a grid only fills in what's missing.
@@ -90,6 +92,7 @@ export function addVisit(item, obs, t = Date.now()) {
     url: fromList && item.url ? item.url : obs.url,
     image: (fromList ? item.image || obs.image : obs.image || item.image),
     currency: obs.currency || item.currency,
+    condition: obs.condition || item.condition || null,
     lastSeen: t,
   });
   return item;
@@ -109,7 +112,7 @@ export async function logError(code, details) {
 
 export async function getSettings() {
   const { settings = {} } = await chrome.storage.local.get("settings");
-  return { updateSource: "", ...settings };
+  return { updateSource: "", logListings: false, rules: [], ...settings };
 }
 
 export async function saveSettings(patch) {
