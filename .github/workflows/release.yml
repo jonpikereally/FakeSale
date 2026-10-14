@@ -1,0 +1,33 @@
+name: Release
+# When manifest.json's version changes on main, build the zip and update
+# updates/latest.json so every installed copy sees the new version.
+on:
+  push:
+    branches: [main]
+    paths: [manifest.json, RELEASE_NOTES.txt]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip if this version is already published
+        id: check
+        run: |
+          v=$(jq -r .version manifest.json)
+          p=$(jq -r .version updates/latest.json 2>/dev/null || echo none)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if [ "$v" = "$p" ]; then echo "skip=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Build
+        if: steps.check.outputs.skip != 'true'
+        run: ./scripts/build-zip.sh
+      - name: Commit updates/
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add updates
+          git commit -m "Release v${{ steps.check.outputs.version }}"
+          git push
