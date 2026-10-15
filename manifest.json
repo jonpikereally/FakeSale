@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FakeSale",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Logs the price of every product page you visit and tells you which \"sales\" are real and which are fake.",
   "homepage_url": "https://github.com/jonpikereally/FakeSale",
   "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
