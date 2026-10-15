@@ -21,7 +21,14 @@
   // "$24/mo", "or 4 payments of $10": instalments, not the price.
   const FINANCING = /\/\s*(mo|month|wk|week|yr|year)\b|per\s+(month|week)|a\s+month|monthly|payments?\s+of|financ|\bapr\b/i;
   // Text labels that mark a "was" price even when it isn't struck through.
-  const WAS_LABEL = /\b(regular|reg\.?|was|compare\s+at|list\s+price|msrp|original(ly)?|retail|before)\b/i;
+  const WAS_LABEL = /\b(regular|reg\.?|was|compare\s+at|list\s+price|full\s+price|msrp|original(ly)?|retail|before)\b/i;
+  // Links every product card has besides its own page ("Add to Cart" etc.).
+  const UTILITY_PATH = /\/(cart|basket|bag|checkout|wishlist|wish-list|login|signin|sign-in|account|compare)(\/|$)/i;
+  // Text meant only for screen readers. Some stores (Waves) show "$99<sup>99</sup>"
+  // with aria-hidden and put the readable "Price $99.99" here.
+  const SR_ONLY = ".sr-only, .visually-hidden, .screen-reader-text, .a11y-hidden";
+  // Card link labels that aren't the product's name ("26 User reviews, rating 4.8 stars").
+  const NOT_A_NAME = /\breviews?\b|\brating\b|\bout of 5\b|\b(add to|quick ?(view|shop)|shop now|view details)\b/i;
 
   // schema.org itemCondition -> a plain word (same as conditionFrom in src/shared/rules.js).
   function condition(raw) {
@@ -318,6 +325,32 @@
     };
   }
 
+  // Waves publishes a JSON-LD Product with no offers, and draws the price as
+  // "$99<sup>99</sup>", so the price is read from its screen-reader label.
+  function fromWaves() {
+    if (!/(^|\.)waves\.com$/.test(location.hostname)) return null;
+    const box = $$(".prd-price-normal").find(isVisible);
+    const priceEl = box && $(SR_ONLY, box);
+    const price = priceEl && parsePrice(text(priceEl));
+    if (!price) return null;
+    let was = null;
+    for (let node = box.parentElement, depth = 0; node && depth < 4 && !was; node = node.parentElement, depth++) {
+      const full = $$(SR_ONLY, node).find((el) => /full\s+price/i.test(text(el)));
+      was = full && parsePrice(text(full));
+    }
+    let product = null;
+    for (const data of jsonLdBlocks()) for (const node of walk(data, false)) if (!product && typeIs(node, "Product")) product = node;
+    return {
+      source: "waves",
+      name: (product && product.name) || text($("h1")) || meta("og:title"),
+      sku: product && skuOf(product),
+      image: (product && firstImage(product)) || meta("og:image"),
+      price,
+      original: was && was > price ? was : null,
+      currency: detectCurrency(text(priceEl)) || "USD", // waves.com sells in US dollars
+    };
+  }
+
   // Shopify variants carry compare_at_price, the store's own "was" price.
   function shopifyVariant(product, variantId, inCents) {
     const v = (product.variants || []).find((x) => String(x.id) === variantId) || (product.variants || [])[0];
@@ -400,7 +433,7 @@
   }
 
   async function detectProduct() {
-    let found = fromAmazon() || fromLongMcQuade() || fromJsonLd() || fromMicrodata() || fromMeta();
+    let found = fromAmazon() || fromLongMcQuade() || fromWaves() || fromJsonLd() || fromMicrodata() || fromMeta();
     let shop = null;
     try { shop = await fromShopify(); } catch { /* not a Shopify product page */ }
     if (shop) {
@@ -535,7 +568,7 @@
     const linkOf = (a) => {
       try {
         const u = new URL(a.getAttribute("href"), location.href);
-        return /^https?:$/.test(u.protocol) && u.hostname.replace(/^www\./, "") === location.hostname.replace(/^www\./, "") && u.pathname.length > 1 ? cleanUrl(u) : null;
+        return /^https?:$/.test(u.protocol) && u.hostname.replace(/^www\./, "") === location.hostname.replace(/^www\./, "") && u.pathname.length > 1 && !UTILITY_PATH.test(u.pathname) ? cleanUrl(u) : null;
       } catch { return null; }
     };
     const priceEls = [];
@@ -565,8 +598,10 @@
     for (const [card, url] of list) {
       if (!isVisible(card)) continue;
       const prices = [];
+      const hasSrPrice = $$(SR_ONLY, card).some((el) => MONEY.test(text(el)));
       for (const el of card.querySelectorAll("*")) {
         if (el.children.length > 2) continue;
+        if (hasSrPrice && el.closest('[aria-hidden="true"]')) continue;
         const t = text(el);
         if (t.length > 40 || !MONEY.test(t) || FINANCING.test(t) || (el.parentElement && FINANCING.test(text(el.parentElement)) && text(el.parentElement).length < 60)) continue;
         const p = parsePrice(t);
@@ -577,7 +612,11 @@
       const price = Math.min(...live);
       const struck = prices.filter((x) => x.struck && x.p > price && x.p <= price * 10).map((x) => x.p);
       const img = $("img", card);
-      const named = $$("a[href]", card).map((a) => a.getAttribute("aria-label") || a.title || text(a)).filter((s) => s && !MONEY.test(s)).sort((a, b) => b.length - a.length)[0];
+      // Text inside the image link is usually a badge ("SUPER SALE"), not the name.
+      const labels = (links) => links.map((a) => a.getAttribute("aria-label") || a.title || text(a))
+        .filter((s) => s && !MONEY.test(s) && !NOT_A_NAME.test(s)).sort((a, b) => b.length - a.length);
+      const own = $$("a[href]", card).filter((a) => linkOf(a) === url);
+      const named = labels(own.filter((a) => !a.querySelector("img")))[0] || labels(own)[0];
       const name = text($("h2, h3, h4, [class*='title' i], [class*='name' i]", card)) || named || (img && img.alt);
       if (!name) continue;
       out.push(finish({
