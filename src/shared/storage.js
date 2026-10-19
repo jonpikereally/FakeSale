@@ -39,20 +39,18 @@ export async function saveItemWithAlias(item, alias) {
   await chrome.storage.local.set({ [ITEM + item.id]: item, [ALIAS + (alias || aliasKey(item.url))]: item.id });
 }
 
-// One-time repair (v1.2.1): v1.1's generic grid reader could log a monthly
-// financing amount ("$267/mo") as the price, and missed labelled "Regular
-// Price" originals. Its sightings are recognisable (source "list:page", no
-// page field), so drop them; items left empty are deleted and get re-logged
-// correctly next time. Product-page visits and other readers are untouched.
-export async function dropV11GenericListVisits() {
+// Drops the visits bad(visit, item) picks out, once (tag goes in "migrations").
+// Items left with no visits are deleted along with their aliases; they get
+// re-logged correctly next time they're seen.
+async function dropVisits(tag, bad) {
   const { migrations = [] } = await chrome.storage.local.get("migrations");
-  if (migrations.includes("1.2.1-generic-list")) return 0;
+  if (migrations.includes(tag)) return 0;
   const all = await chrome.storage.local.get(null);
   const patch = {}, remove = [];
   let dropped = 0;
   for (const [k, item] of Object.entries(all)) {
     if (!k.startsWith(ITEM) || !Array.isArray(item.visits)) continue;
-    const keep = item.visits.filter((v) => !(v.source === "list:page" && v.list && !v.page));
+    const keep = item.visits.filter((v) => !bad(v, item));
     if (keep.length === item.visits.length) continue;
     dropped += item.visits.length - keep.length;
     if (keep.length) {
@@ -61,11 +59,38 @@ export async function dropV11GenericListVisits() {
       remove.push(k, ...Object.keys(all).filter((a) => a.startsWith(ALIAS) && all[a] === item.id));
     }
   }
-  patch.migrations = [...migrations, "1.2.1-generic-list"];
+  patch.migrations = [...migrations, tag];
   await chrome.storage.local.set(patch);
   if (remove.length) await chrome.storage.local.remove(remove);
   return dropped;
 }
+
+// One-time repair (v1.2.1): v1.1's generic grid reader could log a monthly
+// financing amount ("$267/mo") as the price, and missed labelled "Regular
+// Price" originals. Its sightings are recognisable (source "list:page", no
+// page field), so drop them. Product-page visits and other readers are untouched.
+export const dropV11GenericListVisits = () =>
+  dropVisits("1.2.1-generic-list", (v) => v.source === "list:page" && v.list && !v.page);
+
+// Same list as PRIVATE_PAGE in src/content.js.
+const PRIVATE_PAGE = /\/(cart|basket|bag|checkout|buy|orders?|order-history|order-details|thankyou|thank-you|account|your-account)(\/|$|[.?#])/i;
+const pathOf = (u) => { try { return new URL(u).pathname; } catch { return ""; } };
+
+// One-time repair (v1.2.3): before v1.2.3 the generic grid reader (source
+// "list:page") could log a discount badge as the price ("-5%" -> $5), an
+// Amazon unit price ($0.28/count), or a "Save $20" amount, and it read your
+// own cart and order history. Drop those sightings:
+//  - every generic-reader sighting on Amazon and Canadian Tire, where these
+//    mistakes were common (Amazon search pages use their own reader, untouched);
+//  - any generic sighting from a cart, checkout or order page;
+//  - any grid sighting of an item whose "name" is a badge like "-5%";
+//  - Facebook "items" that are a group or city page, not a Marketplace listing.
+const BADGE_NAME = /^\s*[-−–]?\d+(?:[.,]\d+)?\s*%(\s*off)?\s*$|^\s*(\d+\s+)?new offers?\s*$/i;
+export const dropBadGridVisits = () =>
+  dropVisits("1.2.3-bad-grid", (v, item) => (v.list && BADGE_NAME.test(item.name || "")) || (v.source === "list:page" && (
+    /(^|\.)amazon\./.test(item.host) || item.host === "canadiantire.ca" ||
+    PRIVATE_PAGE.test(pathOf(v.page)) ||
+    (item.host === "facebook.com" && !/^\/marketplace\/item\//.test(pathOf(item.url))))));
 
 // One-time upgrade for items saved before aliases existed (v1.0.0).
 export async function rebuildAliases() {

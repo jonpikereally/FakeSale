@@ -75,3 +75,59 @@ assert.deepEqual(mem["item:" + mixed.id].visits.map((v) => v.price), [9, 8]);
 assert.equal(mem["item:" + mixed.id].firstSeen, 1);
 assert.equal(await S.dropV11GenericListVisits(), 0); // runs once
 console.log("Repair migration tests passed.");
+
+// v1.2.3 repair: bad generic-reader sightings (badges, unit prices, carts) are dropped.
+for (const k of Object.keys(mem)) delete mem[k];
+const put = (it) => { mem["item:" + it.id] = it; mem["url:" + S.aliasKey(it.url)] = it.id; };
+const amz = { id: "amazon.ca|B0X", host: "amazon.ca", url: "https://www.amazon.ca/x/dp/B000000001", name: "Coffee", firstSeen: 0, lastSeen: 1,
+  visits: [{ t: 0, price: 0.96, source: "list:page", list: true, page: "https://www.amazon.ca/" }, { t: 1, price: 26.37, source: "amazon" }] };
+const amzSearch = { id: "amazon.ca|B0Y", host: "amazon.ca", url: "https://www.amazon.ca/y/dp/B000000002", name: "Strings", firstSeen: 0, lastSeen: 0,
+  visits: [{ t: 0, price: 8.99, source: "list:amazon", list: true, page: "https://www.amazon.ca/s?k=strings" }] };
+const badge = { id: "shop.test|/p/1", host: "shop.test", url: "https://shop.test/p/1", name: "-5%", firstSeen: 0, lastSeen: 0,
+  visits: [{ t: 0, price: 5, source: "list:page", list: true, page: "https://shop.test/sale" }] };
+const cart = { id: "shop.test|/p/2", host: "shop.test", url: "https://shop.test/p/2", name: "Mug", firstSeen: 0, lastSeen: 1,
+  visits: [{ t: 0, price: 9, source: "list:page", list: true, page: "https://shop.test/cart" }, { t: 1, price: 10, source: "list:page", list: true, page: "https://shop.test/sale" }] };
+const fbGroup = { id: "facebook.com|/groups/x", host: "facebook.com", url: "https://www.facebook.com/groups/x/", name: "Details", firstSeen: 0, lastSeen: 0,
+  visits: [{ t: 0, price: 3, source: "list:page", list: true, page: "https://www.facebook.com/marketplace/toronto/" }] };
+const fbItem = { id: "facebook.com|/marketplace/item/1", host: "facebook.com", url: "https://www.facebook.com/marketplace/item/1/", name: "Amp", firstSeen: 0, lastSeen: 0,
+  visits: [{ t: 0, price: 120, source: "list:page", list: true, page: "https://www.facebook.com/marketplace/toronto/" }] };
+[amz, amzSearch, badge, cart, fbGroup, fbItem].forEach(put);
+mem.migrations = ["1.2.1-generic-list"];
+assert.equal(await S.dropBadGridVisits(), 4);
+assert.deepEqual(mem["item:" + amz.id].visits.map((v) => v.price), [26.37]);
+assert.equal(mem["item:" + amz.id].firstSeen, 1);
+assert.equal(mem["item:" + amzSearch.id].visits.length, 1);
+assert.ok(!("item:" + badge.id in mem) && !Object.values(mem).includes(badge.id));
+assert.deepEqual(mem["item:" + cart.id].visits.map((v) => v.price), [10]);
+assert.ok(!("item:" + fbGroup.id in mem));
+assert.equal(mem["item:" + fbItem.id].visits.length, 1);
+assert.deepEqual(mem.migrations, ["1.2.1-generic-list", "1.2.3-bad-grid"]);
+assert.equal(await S.dropBadGridVisits(), 0); // runs once
+
+// The content script's copy of PRIVATE_PAGE must match storage.js's.
+const privateRe = (code) => code.match(/const PRIVATE_PAGE = (\/.*\/i);/)[1];
+assert.equal(privateRe(src), privateRe(readFileSync(new URL("../src/shared/storage.js", import.meta.url), "utf8")));
+console.log("v1.2.3 repair migration tests passed.");
+
+// Grid reader: unit prices and savings aren't the price; badges aren't names.
+const notThePrice = new Function(src.match(/  function notThePrice[\s\S]*?\n  }\n/)[0] + "return notThePrice;")();
+const no = [
+  ["$0.28", ["$0.28$0.28", "($0.28$0.28/count)"]],   // Amazon unit price
+  ["$1.20/100 g", []],
+  ["Save $20", []],
+  ["$20", ["Save $20"]],
+  ["$20 off", []],
+  ["$4.99", ["($4.99 per item)"]],
+];
+for (const [own, around] of no) assert.equal(notThePrice(own, around), true, own);
+const yes = [
+  ["$179.99", ["$179.99 Save $20", "$179.99 Save $20 Blueair humidifier"]],
+  ["$53.99", ["-5% $53.99"]],
+  ["$99.99", ["Price $99.99"]],
+  ["$1,299.00", []],
+];
+for (const [own, around] of yes) assert.equal(notThePrice(own, around), false, own);
+const BADGE = new Function("return " + src.match(/const BADGE = (\/.*\/i);/)[1])();
+for (const s of ["-5%", "-10% off", "new offers", "3 new offers", "Sale", "Best Seller", "Save $20"]) assert.ok(BADGE.test(s), s);
+for (const s of ["BOSS TU-3 Chromatic Tuner", "Salesforce Mug", "10% Juice Box"]) assert.ok(!BADGE.test(s), s);
+console.log("Grid reader price and name tests passed.");

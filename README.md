@@ -49,7 +49,7 @@ Any store that publishes standard product data, which is most of them: schema.or
 - **Shopify stores**: reads `compare_at_price` straight from the store's product data.
 - **Long & McQuade GearHunter**: reads sale and regular prices from item pages.
 
-For lists (search results, categories, collections), FakeSale reads Amazon search results, Shopify collections (one request gets every price, including `compare_at_price`), structured item lists, and, on other stores, a general "product card" reader that finds the price, struck-through "was" price, name and link in each card of the grid. Lists are capped at 300 items per page, and infinite-scroll pages are re-read as more items load.
+For lists (search results, categories, collections), FakeSale reads Amazon search results, Shopify collections (one request gets every price, including `compare_at_price`), structured item lists, and, on other stores, a general "product card" reader that finds the price, struck-through "was" price, name and link in each card of the grid. Cart, checkout and order-history pages are never read as lists. Lists are capped at 300 items per page, and infinite-scroll pages are re-read as more items load.
 
 If a store isn't detected, or the "was" price is missed, please [open an issue](https://github.com/jonpikereally/FakeSale/issues) with the link.
 

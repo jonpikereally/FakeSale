@@ -24,11 +24,42 @@
   const WAS_LABEL = /\b(regular|reg\.?|was|compare\s+at|list\s+price|full\s+price|msrp|original(ly)?|retail|before)\b/i;
   // Links every product card has besides its own page ("Add to Cart" etc.).
   const UTILITY_PATH = /\/(cart|basket|bag|checkout|wishlist|wish-list|login|signin|sign-in|account|compare)(\/|$)/i;
+  // Pages whose item lists are your own cart or past orders, not what's for sale.
+  // Same list as PRIVATE_PAGE in src/shared/storage.js.
+  const PRIVATE_PAGE = /\/(cart|basket|bag|checkout|buy|orders?|order-history|order-details|thankyou|thank-you|account|your-account)(\/|$|[.?#])/i;
   // Text meant only for screen readers. Some stores (Waves) show "$99<sup>99</sup>"
   // with aria-hidden and put the readable "Price $99.99" here.
   const SR_ONLY = ".sr-only, .visually-hidden, .screen-reader-text, .a11y-hidden";
   // Card link labels that aren't the product's name ("26 User reviews, rating 4.8 stars").
   const NOT_A_NAME = /\breviews?\b|\brating\b|\bout of 5\b|\b(add to|quick ?(view|shop)|shop now|view details)\b/i;
+  // Card badges that look like a heading but aren't the name ("-5%", "new offers").
+  const BADGE = /^\s*([-−–]?\d+(?:[.,]\d+)?\s*%(\s*off)?|(\d+\s+)?new offers?|(limited[- ]time\s+)?deal|sale|sponsored|best ?seller|save\b.*)\s*$/i;
+  // Some stores' grids link to things that aren't items (Facebook groups, city pages).
+  const CARD_PATH = { "facebook.com": /^\/marketplace\/item\// };
+
+  // True when a money amount is a unit price ("($0.28/count)") or a saving
+  // ("Save $20", "$20 off") rather than the price. own = the element's text,
+  // around = its parents' texts, innermost first.
+  function notThePrice(own, around) {
+    const UNIT = /^(\/|per\b)\s*(\d+\s*)?(count|ct|units?|each|ea|items?|pieces?|pcs?|pods?|capsules?|sheets?|rolls?|loads?|packs?|bags?|bottles?|cans?|g|kg|grams?|mg|lbs?|oz|ounces?|fl\.?\s*oz|l|ml|litres?|liters?|ft|feet|foot|m|metres?|meters?|sq\.?\s*ft)\b/i;
+    const SAVING = /^(you\s+)?(save|saving|savings)\b|^(off|less)$/i;
+    const AMOUNT = /(CA|C|US|AU|A)?[$€£¥₹₩]\s*\d[\d.,']*|\d[\d.,']*\s*[€£]|\b(USD|CAD|EUR|GBP|AUD|CHF)\b/;
+    const trim = (s) => s.replace(/^[\s()[\]\-–—:,.*|]+|[\s()[\]\-–—:,.*|]+$/g, "");
+    const other = (rest) => UNIT.test(rest) || SAVING.test(rest);
+    if (other(trim(own.replace(new RegExp(AMOUNT, "g"), " ")))) return true;
+    for (const t of around) {
+      if (t.length > 60) break;
+      const rest = trim(t.split(own).join(" "));
+      if (AMOUNT.test(rest)) break; // another price in here ("$179.99 Save $20"): stop
+      if (other(rest)) return true;
+    }
+    return false;
+  }
+  const parentTexts = (el, card) => {
+    const out = [];
+    for (let n = el.parentElement, d = 0; n && n !== card && d < 3; n = n.parentElement, d++) out.push(text(n));
+    return out;
+  };
 
   // schema.org itemCondition -> a plain word (same as conditionFrom in src/shared/rules.js).
   function condition(raw) {
@@ -52,7 +83,8 @@
   function parsePrice(raw) {
     if (raw == null) return null;
     if (typeof raw === "number") return isFinite(raw) && raw > 0 ? raw : null;
-    let s = String(raw).replace(/ /g, " ").trim();
+    // "-5% $53.99": a discount badge is never the price, so drop percentages first.
+    let s = String(raw).replace(/ /g, " ").replace(/[-−–]?\s*\d+(?:[.,]\d+)?\s*%/g, " ").trim();
     const m = s.match(/\d[\d.,\s']*/);
     if (!m) return null;
     s = m[0].replace(/[\s']/g, "").replace(/[.,]$/, "");
@@ -568,7 +600,9 @@
     const linkOf = (a) => {
       try {
         const u = new URL(a.getAttribute("href"), location.href);
-        return /^https?:$/.test(u.protocol) && u.hostname.replace(/^www\./, "") === location.hostname.replace(/^www\./, "") && u.pathname.length > 1 && !UTILITY_PATH.test(u.pathname) ? cleanUrl(u) : null;
+        const host = u.hostname.replace(/^www\./, "");
+        const itemPath = CARD_PATH[host];
+        return /^https?:$/.test(u.protocol) && host === location.hostname.replace(/^www\./, "") && u.pathname.length > 1 && !UTILITY_PATH.test(u.pathname) && (!itemPath || itemPath.test(u.pathname)) ? cleanUrl(u) : null;
       } catch { return null; }
     };
     const priceEls = [];
@@ -604,6 +638,7 @@
         if (hasSrPrice && el.closest('[aria-hidden="true"]')) continue;
         const t = text(el);
         if (t.length > 40 || !MONEY.test(t) || FINANCING.test(t) || (el.parentElement && FINANCING.test(text(el.parentElement)) && text(el.parentElement).length < 60)) continue;
+        if (notThePrice(t, parentTexts(el, card))) continue;
         const p = parsePrice(t);
         if (p) prices.push({ p, struck: looksStruck(el) || (el.parentElement !== card && looksStruck(el.parentElement)), t });
       }
@@ -613,11 +648,15 @@
       const struck = prices.filter((x) => x.struck && x.p > price && x.p <= price * 10).map((x) => x.p);
       const img = $("img", card);
       // Text inside the image link is usually a badge ("SUPER SALE"), not the name.
+      const isName = (s) => s && !MONEY.test(s) && !NOT_A_NAME.test(s) && !BADGE.test(s);
       const labels = (links) => links.map((a) => a.getAttribute("aria-label") || a.title || text(a))
-        .filter((s) => s && !MONEY.test(s) && !NOT_A_NAME.test(s)).sort((a, b) => b.length - a.length);
+        .filter(isName).sort((a, b) => b.length - a.length);
       const own = $$("a[href]", card).filter((a) => linkOf(a) === url);
       const named = labels(own.filter((a) => !a.querySelector("img")))[0] || labels(own)[0];
-      const name = text($("h2, h3, h4, [class*='title' i], [class*='name' i]", card)) || named || (img && img.alt);
+      // The longest heading, so a brand line ("BOSS") loses to the full title.
+      const heading = $$("h2, h3, h4, [class*='title' i], [class*='name' i]", card).map(text)
+        .filter((s) => isName(s) && s.length < 200).sort((a, b) => b.length - a.length)[0];
+      const name = heading || named || (img && isName(img.alt) && img.alt);
       if (!name) continue;
       out.push(finish({
         source: "list:page",
@@ -632,6 +671,7 @@
   }
 
   async function detectListing() {
+    if (PRIVATE_PAGE.test(location.pathname)) return [];
     let items = listFromAmazon();
     if (!items.length) items = await listFromShopify().catch(() => []);
     if (!items.length) items = listFromJsonLd();
