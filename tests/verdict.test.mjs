@@ -22,7 +22,7 @@ assert.equal(it.visits.length, 1); assert.equal(it.visits[0].n, 3);
 // price parser lives in the content script; pull it out without a DOM
 const src = readFileSync(new URL("../src/content.js", import.meta.url), "utf8");
 const parsePrice = new Function(src.match(/function parsePrice[\s\S]*?\n  }\n/)[0] + "return parsePrice;")();
-for (const [input, want] of [["$1,299.99", 1299.99], ["1.299,99 €", 1299.99], ["CA$ 49", 49], ["1 299,99", 1299.99], ["£12.5", 12.5], ["1,299", 1299], [19.99, 19.99], ["Free", null], ["$0.00", null]]) {
+for (const [input, want] of [["$1,299.99", 1299.99], ["1.299,99 €", 1299.99], ["CA$ 49", 49], ["1 299,99", 1299.99], ["£12.5", 12.5], ["1,299", 1299], [19.99, 19.99], ["Free", null], ["$0.00", null], ["-5% $53.99", 53.99], ["-10%", null], ["Save 20% $80", 80]]) {
   assert.equal(parsePrice(input), want, `parsePrice(${JSON.stringify(input)})`);
 }
 console.log("All verdict and price-parsing tests passed.");
