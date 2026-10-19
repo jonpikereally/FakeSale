@@ -1,5 +1,5 @@
 {
-  "version": "1.2.2",
+  "version": "1.2.3",
   "url": "FakeSale.zip",
-  "notes": "Fixed: Waves (waves.com) now logs. Product pages read the price from the page's screen-reader label (Waves draws cents in superscript, so \"$99<sup>99</sup>\" would have read as $9999), and grid cards are no longer skipped because of their Add to Cart link. Any store whose cards link to a cart, checkout or wishlist page benefits too, and grid item names no longer come from review-count labels."
+  "notes": "Fixed: list-page logging recorded some wrong prices. A discount badge could be read as the price (\"-5%\" logged as $5) and as the item's name, Amazon per-unit prices ($0.28/count) and \"Save $20\" amounts were taken for the price, and Facebook group or city pages were logged as items. Cart, checkout and order-history pages are no longer read at all, since they list what you bought, not what's for sale. Cleanup: removes the affected list sightings (all generic list sightings on Amazon and Canadian Tire, plus any from cart or order pages); those items are re-logged correctly next time you see them. Product-page visits are untouched."
 }
